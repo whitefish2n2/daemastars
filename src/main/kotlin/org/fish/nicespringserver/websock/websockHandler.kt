@@ -50,19 +50,23 @@ class WebSocketHandler(
 
                     sessionToPlayerId[session.id] = newPlayer.id
 
+                    val spawnX = Random.nextDouble(9.0, 12.0).toFloat()
+                    val spawnY = Random.nextDouble(3.0, 6.0).toFloat()
+                    val spawnZ = 0f
+                    val spawnPos = Vector3(spawnX, spawnY, spawnZ)
+                    val initDto = InitDto(newPlayer.id, spawnPos)
+                    val joinResponse = MessageDto(MessageType.JOIN, objectMapper.writeValueAsString(newPlayer))
+                    val initResponse = MessageDto(MessageType.INIT, objectMapper.writeValueAsString(initDto))
+                    broadcastWithOutSender(objectMapper.writeValueAsString(joinResponse),session.id)
+                    newPlayer.position = spawnPos
+
+                    session.sendMessage(TextMessage(objectMapper.writeValueAsString(initResponse)))
                     playerManager.getAllPlayers().forEach { existingPlayer ->
                         if (existingPlayer.id != newPlayer.id) {
                             val msg = MessageDto(MessageType.JOIN, objectMapper.writeValueAsString(existingPlayer))
                             session.sendMessage(TextMessage(objectMapper.writeValueAsString(msg)))
                         }
                     }
-                    val spawnX = Random.nextDouble(-2.0, 2.0).toFloat()
-                    val spawnY = Random.nextDouble(-2.0, 2.0).toFloat()
-                    val spawnZ = Random.nextDouble(-2.0, 2.0).toFloat()
-                    val spawnPos = Vector3(spawnX, spawnY, spawnZ)
-                    val InitDto = InitDto(newPlayer.id, spawnPos)
-                    val joinResponse = MessageDto(MessageType.INIT, objectMapper.writeValueAsString(InitDto))
-                    broadcast(objectMapper.writeValueAsString(joinResponse))
                 }
 
                 MessageType.MOVE -> {
@@ -71,6 +75,8 @@ class WebSocketHandler(
                     val targetPlayer = playerManager.getPlayer(dto.playerId)
 
                     if (targetPlayer != null) {
+
+                        //대상 플레이어의 위치를 업데이트해요.
                         playerManager.updatePlayerTransform(dto.playerId, dto.pos, dto.rot)
 
                         val moveDto = MoveDto(dto.playerId, dto.pos, dto.rot)
@@ -79,6 +85,9 @@ class WebSocketHandler(
                     }
                 }
 
+                MessageType.PING ->{
+                    session.sendMessage(TextMessage("PONG"))
+                }
                 MessageType.CHAT -> {
                     // 클라이언트가 친 명령어를 불러와요
                     val chatDto = objectMapper.readValue<ChatDto>(messageDto.dto)
@@ -106,7 +115,7 @@ class WebSocketHandler(
 
                     if (targetPlayer != null) {
                         val shotResponse = MessageDto(MessageType.SHOT, objectMapper.writeValueAsString(dto))
-                        broadcastWithOutSender(objectMapper.writeValueAsString(shotResponse), dto.playerId)
+                        broadcastWithOutSender(objectMapper.writeValueAsString(shotResponse), session.id)
                     }
                 }
 
@@ -152,6 +161,7 @@ class WebSocketHandler(
         }
     }
 
+    ///현재 연결되어있는 모든 세션에 payload를 전송
     private fun broadcast(payload: String) {
         val textMessage = TextMessage(payload)
         sessions.values.forEach { targetSession ->
@@ -162,6 +172,7 @@ class WebSocketHandler(
             }
         }
     }
+    ///현재 연결되어있는 세션 아이디가 senderId인 사람을 제외한 모든 세션에 payload를 전송
     private fun broadcastWithOutSender(payload: String, senderId: String) {
         val textMessage = TextMessage(payload)
         sessions.values.forEach { targetSession ->
