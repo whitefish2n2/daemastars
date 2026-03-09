@@ -26,7 +26,11 @@ class WebSocketHandler(
     private val objectMapper: ObjectMapper,
     private val playerManager: PlayerManager
 ) : TextWebSocketHandler() {
-
+    //region [만지지 마세용]
+    private fun MessageDto.toJson(): String {
+        return objectMapper.writeValueAsString(this)
+    }
+    //endregion
     private val logger = LoggerFactory.getLogger(javaClass)
     private val sessions = ConcurrentHashMap<String, WebSocketSession>()
 
@@ -50,17 +54,16 @@ class WebSocketHandler(
 
                     sessionToPlayerId[session.id] = newPlayer.id
 
-                    val spawnX = Random.nextDouble(9.0, 12.0).toFloat()
-                    val spawnY = Random.nextDouble(3.0, 6.0).toFloat()
-                    val spawnZ = 0f
-                    val spawnPos = Vector3(spawnX, spawnY, spawnZ)
-                    val initDto = InitDto(newPlayer.id, spawnPos)
-                    val joinResponse = MessageDto(MessageType.JOIN, objectMapper.writeValueAsString(newPlayer))
+                    val spawnPos:Vector3 = Vector3(0f,0f,0f);//!!
+                    val initDto: InitDto = InitDto("",spawnPos)//!!
                     val initResponse = MessageDto(MessageType.INIT, objectMapper.writeValueAsString(initDto))
-                    broadcastWithOutSender(objectMapper.writeValueAsString(joinResponse),session.id)
                     newPlayer.position = spawnPos
+                    session.sendMessage(TextMessage(initResponse.toJson()))
 
-                    session.sendMessage(TextMessage(objectMapper.writeValueAsString(initResponse)))
+                    val joinResponse = MessageDto(MessageType.JOIN, objectMapper.writeValueAsString(newPlayer))
+                    broadcastWithOutSender(objectMapper.writeValueAsString(joinResponse),session.id)
+
+
                     playerManager.getAllPlayers().forEach { existingPlayer ->
                         if (existingPlayer.id != newPlayer.id) {
                             val msg = MessageDto(MessageType.JOIN, objectMapper.writeValueAsString(existingPlayer))
@@ -76,8 +79,8 @@ class WebSocketHandler(
 
                     if (targetPlayer != null) {
 
-                        //대상 플레이어의 위치를 업데이트해요.
-                        playerManager.updatePlayerTransform(dto.playerId, dto.pos, dto.rot)
+                        //대상 플레이어의 위치를 업데이트해요.(playerManager.updatePlayerTransform 함수 활용)
+
 
                         val moveDto = MoveDto(dto.playerId, dto.pos, dto.rot)
                         val moveResponse = MessageDto(MessageType.MOVE, objectMapper.writeValueAsString(moveDto))
@@ -86,7 +89,7 @@ class WebSocketHandler(
                 }
 
                 MessageType.PING ->{
-                    session.sendMessage(TextMessage("PONG"))
+                    //보낸 플레이어에게 PONG 을 반환해요
                 }
                 MessageType.CHAT -> {
                     // 클라이언트가 친 명령어를 불러와요
@@ -110,13 +113,14 @@ class WebSocketHandler(
                     broadcast(objectMapper.writeValueAsString(chatResponse))
                 }
                 MessageType.SHOT -> {
-                    val dto = objectMapper.readValue<ShotDto>(messageDto.dto)
-                    val targetPlayer = playerManager.getPlayer(dto.playerId)
-
-                    if (targetPlayer != null) {
-                        val shotResponse = MessageDto(MessageType.SHOT, objectMapper.writeValueAsString(dto))
-                        broadcastWithOutSender(objectMapper.writeValueAsString(shotResponse), session.id)
-                    }
+                    val dto: ShotDto = objectMapper.readValue<ShotDto>(messageDto.dto)
+                    /*
+                    data class ShotDto(
+                        val playerId: String,
+                        val direction: Vector3
+                    )
+                    */
+                    ///ShotDto를 다른 유저들에게 전달해요
                 }
 
                 MessageType.HIT -> {
@@ -125,14 +129,7 @@ class WebSocketHandler(
                     val victim = playerManager.getPlayer(dto.victimId)
 
                     if (shooter != null && victim != null) {
-                        // 점수 반영
-                        shooter.score.incrementAndGet()
-                        victim.score.decrementAndGet()
 
-                        println("[HIT] ${shooter.name}(${shooter.score}점) 가 ${victim.name}(${victim.score}점) 을 맞췄습니다!")
-
-                        val hitResponse = MessageDto(MessageType.HIT, objectMapper.writeValueAsString(dto))
-                        broadcast(objectMapper.writeValueAsString(hitResponse))
                     }
                 }
                 else -> {}
@@ -152,11 +149,7 @@ class WebSocketHandler(
             val targetPlayer = playerManager.getPlayer(playerId)
 
             if (targetPlayer != null) {
-                val leaveDto = LeaveDto(targetPlayer.id)
-                playerManager.removePlayer(playerId)
-
-                val messageDto = MessageDto(MessageType.LEAVE, objectMapper.writeValueAsString(leaveDto))
-                broadcast(objectMapper.writeValueAsString(messageDto))
+                ///플레이어가 나간 사실을 알려요(playerManager.removePlayer 사용, LeaveDto를 broadcast)
             }
         }
     }
